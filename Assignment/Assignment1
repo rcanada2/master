@@ -1,0 +1,27 @@
+--Get order count for 2017 and 2018
+SELECT CustomerId
+	,COUNT(1) OrderCount
+FROM [dbo].[Order]
+WHERE YEAR(OrderDate) BETWEEN 2017 and 2018
+GROUP BY CustomerId
+HAVING COUNT(1) = 2
+
+--Create backup for Product table
+SELECT *
+INTO Product_20210913
+FROM [dbo].[Product]
+WHERE ModelYear != 2016
+
+--Raise the prodcut prices by 20%
+UPDATE NewProduct
+SET ListPrice = ListPrice + (ListPrice*.20)
+FROM Product_20210913 NewProduct
+LEFT JOIN [dbo].[Brand] Brand on Brand.BrandId = NewProduct.BrandId
+WHERE BrandName IN ('Heller','Sun Bicycles')
+
+--Raise the prodcut prices by 10%
+UPDATE NewProduct
+SET ListPrice = ListPrice + (ListPrice*.10)
+FROM Product_20210913 NewProduct
+LEFT JOIN [dbo].[Brand] Brand on Brand.BrandId = NewProduct.BrandId
+WHERE BrandName NOT IN ('Heller','Sun Bicycles')
