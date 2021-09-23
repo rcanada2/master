@@ -1,0 +1,71 @@
+--1
+SELECT prod.ProductName
+	,SUM(ordItm.Quantity) TotalQuantity
+FROM dbo.[Order] ord
+LEFT JOIN dbo.OrderItem ordItm ON ordItm.OrderId = ord.OrderId
+LEFT JOIN dbo.Product prod ON prod.ProductId = ordItm.ProductId
+LEFT JOIn dbo.Customer cus ON cus.CustomerId = ord.CustomerId
+WHERE cus.[State] = 'TX'
+GROUP BY prod.ProductName
+HAVING SUM(ordItm.Quantity) > 10
+ORDER BY 2 DESC
+
+--2
+SELECT REPLACE(cat.CategoryName,'Bikes','Bicycles') CategoryName
+	,SUM(ordItm.Quantity) TotalQuantity
+FROM dbo.[Order] ord
+LEFT JOIN dbo.OrderItem ordItm ON ordItm.OrderId = ord.OrderId
+LEFT JOIN dbo.Product prod ON prod.ProductId = ordItm.ProductId
+LEFT JOIN dbo.Category cat ON cat.CategoryId = prod.CategoryId
+GROUP BY REPLACE(cat.CategoryName,'Bikes','Bicycles')
+ORDER BY 2 DESC
+
+--3
+SELECT prod.ProductName
+	,SUM(ordItm.Quantity) TotalQuantity
+FROM dbo.[Order] ord
+LEFT JOIN dbo.OrderItem ordItm ON ordItm.OrderId = ord.OrderId
+LEFT JOIN dbo.Product prod ON prod.ProductId = ordItm.ProductId
+LEFT JOIn dbo.Customer cus ON cus.CustomerId = ord.CustomerId
+WHERE cus.[State] = 'TX'
+GROUP BY prod.ProductName
+HAVING SUM(ordItm.Quantity) > 10
+UNION ALL
+SELECT REPLACE(cat.CategoryName,'Bikes','Bicycles') CategoryName
+	,SUM(ordItm.Quantity) TotalQuantity
+FROM dbo.[Order] ord
+LEFT JOIN dbo.OrderItem ordItm ON ordItm.OrderId = ord.OrderId
+LEFT JOIN dbo.Product prod ON prod.ProductId = ordItm.ProductId
+LEFT JOIN dbo.Category cat ON cat.CategoryId = prod.CategoryId
+GROUP BY REPLACE(cat.CategoryName,'Bikes','Bicycles')
+ORDER BY 2 DESC
+
+
+--4
+WITH CTEOrder AS(
+	SELECT a.OrderYear
+		,a.OrderMonth
+		,a.ProductName
+		,a.TotalQuantity
+		,RANK() OVER(PARTITION BY a.OrderYear,a.OrderMonth ORDER BY a.TotalQuantity DESC) rnk
+	FROM(
+		SELECT YEAR(ord.OrderDate) OrderYear
+			,MONTH(ord.OrderDate) OrderMonth
+			,prod.ProductName
+			,SUM(ordItm.Quantity) TotalQuantity
+		FROM dbo.[Order] ord
+		LEFT JOIN dbo.OrderItem ordItm ON ordItm.OrderId = ord.OrderId
+		LEFT JOIN dbo.Product prod ON prod.ProductId = ordItm.ProductId
+		GROUP BY YEAR(ord.OrderDate)
+			,MONTH(ord.OrderDate)
+			,prod.ProductName
+	)a
+)
+
+SELECT OrderYear
+	,OrderMonth
+	,ProductName
+	,TotalQuantity
+FROM CTEOrder
+WHERE rnk = 1
+ORDER BY OrderYear,OrderMonth
