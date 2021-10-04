@@ -1,0 +1,116 @@
+--1
+SELECT distinct sto.StoreId
+	,sto.StoreName
+FROM dbo.[Order] ord
+RIGHT JOIN dbo.Store sto ON sto.StoreId = ord.StoreId
+WHERE ord.StoreId IS NULL
+
+--2
+SELECT prod.ProductId
+	,prod.ProductName
+	,brand.BrandName
+	,cat.CategoryName
+	,stk.Quantity
+FROM dbo.Product prod
+LEFT JOIN dbo.Category cat ON cat.CategoryId = prod.CategoryId
+LEFT JOIn dbo.Brand brand ON brand.BrandId = prod.BrandId
+LEFT JOIN dbo.Stock stk ON stk.ProductId = prod.ProductId
+LEFT JOIN dbo.Store sto ON sto.StoreId = stk.StoreId
+WHERE sto.StoreName = 'Baldwin Bikes'
+ORDER BY stk.Quantity DESC, prod.ProductName, brand.BrandName, cat.CategoryName
+
+--3
+SELECT sto.StoreName
+	,YEAR(ord.OrderDate) OrderYear
+	,COUNT(ord.OrderId) OrderCount
+FROM dbo.Store sto  
+LEFT JOIN dbo.[Order] ord ON sto.StoreId = ord.StoreId 
+WHERE YEAR(ord.OrderDate) IS NOT NULL
+GROUP BY sto.StoreName
+	,YEAR(ord.OrderDate)
+ORDER BY sto.StoreName, YEAR(ord.OrderDate) DESC
+
+--4
+WITH CTE AS(
+	SELECT brn.BrandName
+		,prod.ProductId
+		,prod.ProductName
+		,prod.ListPrice
+		,ROW_NUMBER() OVER(PARTITION BY brn.BrandName ORDER BY prod.ListPrice DESC) rnk
+	FROM dbo.Product prod
+	LEFT JOIN dbo.Brand brn ON brn.BrandId = prod.BrandId
+)
+
+SELECT BrandName
+	,ProductId
+	,ProductName
+	,ListPrice
+FROM CTE
+WHERE rnk < 6
+
+--5
+DECLARE 
+    @StoreName VARCHAR(MAX), 
+    @OrderYear   INT,
+	@OrderCount INT;
+DECLARE db_cursor CURSOR FOR
+SELECT sto.StoreName
+	,YEAR(ord.OrderDate) OrderYear
+	,COUNT(ord.OrderId) OrderCount
+FROM dbo.Store sto  
+LEFT JOIN dbo.[Order] ord ON sto.StoreId = ord.StoreId 
+WHERE YEAR(ord.OrderDate) IS NOT NULL
+GROUP BY sto.StoreName
+	,YEAR(ord.OrderDate)
+ORDER BY sto.StoreName, YEAR(ord.OrderDate) DESC
+OPEN db_cursor;
+FETCH NEXT FROM db_cursor INTO 
+    @StoreName, 
+    @OrderYear,
+	@OrderCount;
+
+WHILE @@FETCH_STATUS = 0
+    BEGIN
+        PRINT @StoreName + ' ' + CAST(@OrderYear AS VARCHAR) + ' ' + CAST(@OrderCount AS VARCHAR);
+        FETCH NEXT FROM db_cursor INTO 
+            @StoreName, 
+            @OrderYear,
+			@OrderCount;
+    END;
+
+CLOSE db_cursor;
+
+DEALLOCATE db_cursor;
+
+--6
+DECLARE @Num1 INT,
+	@Num2 INT;
+SET @Num1 = 1
+
+WHILE @Num1 <= 10
+	BEGIN
+		SET @Num2 = 1
+		WHILE @Num2 <= 10
+		BEGIN
+			PRINT CAST(@Num1 AS VARCHAR) +' * '+ CAST(@Num2 AS VARCHAR) +' = ' + CAST((@Num1*@Num2) AS VARCHAR)
+			SET @Num2 = @Num2+1
+		END
+		SET @Num1 = @Num1+1;
+	END
+
+--7
+SELECT *
+FROM(
+	SELECT YEAR(ord.OrderDate) SalesYear
+		,LEFT(DATENAME(MONTH,ord.OrderDate),3) Mnth
+		,(ordI.ListPrice*ordI.Quantity)-ordI.Discount Sales
+	FROM dbo.[Order] ord
+	LEFT JOIN dbo.OrderItem ordI ON ordI.OrderId = ord.OrderId
+)a
+PIVOT(
+	SUM(Sales)
+	FOR Mnth IN (
+    Jan,Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec
+  )
+)b
+ORDER BY SalesYear
