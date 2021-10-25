@@ -1,0 +1,207 @@
+--1 EXEC CreateNewBrandAndMoveProducts 'NewBrandName',1
+CREATE PROCEDURE CreateNewBrandAndMoveProducts
+    @NewBrandName AS VARCHAR(100),
+    @OldBrandId AS INT
+AS
+BEGIN
+    DECLARE @NewID AS INT = 0
+
+    IF ISNULL(@NewBrandName, '') = ''
+    BEGIN
+        RAISERROR('Invalid Brand Name', 18, 0)
+        RETURN
+    END
+
+    IF ISNULL(@OldBrandId, 0) = 0
+    BEGIN
+        RAISERROR('Invalid Brand ID', 18, 0)
+        RETURN
+    END
+
+    BEGIN TRY
+        BEGIN TRANSACTION NewBrandName
+        IF NOT  EXISTS(SELECT 1 FROM Brand WHERE BrandName = @NewBrandName)
+        BEGIN
+
+            INSERT INTO dbo.Brand
+            (
+                BrandName
+            )
+            VALUES (@NewBrandName)
+
+            SET @NewID = @@IDENTITY
+
+            UPDATE dbo.Product
+            SET BrandId = @NewID
+            WHERE BrandId = @OldBrandId
+
+            DELETE FROM dbo.Brand
+            WHERE BrandId = @OldBrandId
+        END
+        ELSE
+        BEGIN
+            ROLLBACK TRAN NewBrandName
+            RAISERROR('Brand name exists.', 18, 0)
+            RETURN
+        END
+
+        COMMIT TRANSACTION NewBrandName
+
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRAN NewBrandName
+        RAISERROR('Encountered an error.', 18, 0)
+    END CATCH
+
+
+END
+GO
+
+
+--2 EXEC GetProduct 'trek', 9, 6, 2016, 1
+CREATE PROCEDURE GetProduct
+    @ProdName AS VARCHAR(100) = NULL,
+    @BrandID AS INT = NULL,
+    @CategoryID AS INT = NULL,
+    @ModelYear AS INT = NULL,
+    @PageNo AS INT = 1
+AS
+BEGIN
+
+    DECLARE @PageRows AS INT = 10
+
+    SELECT prod.ProductName,
+           brnd.BrandName,
+           cat.CategoryName,
+           prod.ModelYear,
+           prod.ListPrice
+    FROM dbo.Product prod
+        INNER JOIN dbo.Brand brnd
+            ON prod.BrandId = brnd.BrandId
+        INNER JOIN dbo.Category cat
+            ON prod.CategoryId = cat.CategoryId
+    WHERE ProductName LIKE '%' + @ProdName + '%'
+          AND brnd.BrandId = @BrandID
+          AND cat.CategoryId = @CategoryID
+          AND prod.ModelYear = @ModelYear
+    ORDER BY prod.ModelYear DESC,
+             prod.ListPrice DESC,
+             prod.ProductName OFFSET ((@PageNo - 1) * @PageRows) ROWS FETCH NEXT @PageRows ROWS ONLY;
+
+END
+GO
+
+--3
+SELECT *
+INTO Product_20211025
+FROM Product
+
+ALTER TABLE dbo.Product_20211025 ADD PRIMARY KEY CLUSTERED (ProductId ASC)
+GO
+
+UPDATE Product_20211025
+SET ListPrice = CASE
+                    WHEN CategoryName IN ( 'Children Bicycles', 'Cyclocross Bicycles', 'Road Bikes' ) THEN
+    (ListPrice * 1.2)
+                    WHEN CategoryName IN ( 'Comfort Bicycles', 'Cruisers Bicycles', 'Electric Bikes' ) THEN
+    (ListPrice * 1.7)
+                    WHEN CategoryName IN ( 'Mountain Bikes' ) THEN
+    (ListPrice * 1.4)
+                    ELSE
+                        ListPrice
+                END
+FROM Product_20211025 prod
+    INNER JOIN Category cat
+        ON prod.CategoryId = cat.CategoryId
+
+--4
+--Create table
+CREATE TABLE dbo.Ranking(
+	Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+	[Description] VARCHAR(100) NULL
+)
+
+--Insert data
+INSERT INTO dbo.Ranking VALUES ('Inactive'),('Bronze'),('Silver'),('Gold'),('Platinum')
+
+--Add foreign Key
+ALTER TABLE dbo.Customer
+    ADD RankingId INTEGER CONSTRAINT fk FOREIGN KEY(RankingId) REFERENCES dbo.Ranking(Id);
+
+--stored procedure uspRankCustomers
+CREATE PROCEDURE uspRankCustomers
+AS
+BEGIN
+    WITH TotalOrder
+    AS (SELECT cust.CustomerId,
+               SUM(ISNULL((ordItm.Quantity * ordItm.ListPrice), 0)) AS TotalOrderAmount
+        FROM dbo.Customer cust
+            LEFT JOIN dbo.[Order] ord
+                ON cust.CustomerId = ord.CustomerId
+            LEFT JOIN OrderItem ordItm
+                ON ord.OrderId = ordItm.OrderId
+        GROUP BY cust.CustomerId
+       )
+    UPDATE Customer
+    SET RankingId = CASE
+                        WHEN TotalOrderAmount = 0 THEN
+                            1
+                        WHEN TotalOrderAmount < 1000 THEN
+                            2
+                        WHEN TotalOrderAmount < 2000 THEN
+                            3
+                        WHEN TotalOrderAmount < 3000 THEN
+                            4
+                        WHEN TotalOrderAmount >= 3000 THEN
+                            5
+                        ELSE
+                            1
+                    END
+    FROM Customer cust
+        INNER JOIN TotalOrder tOrd
+            ON cust.CustomerId = tOrd.CustomerId
+END
+GO
+
+--view
+CREATE VIEW vwCustomerOrders
+AS
+SELECT cust.CustomerId,
+       cust.FirstName,
+       cust.LastName,
+       SUM(ISNULL((ordItm.Quantity * ordItm.ListPrice), 0)) AS TotalOrderAmount,
+       rnk.[Description] AS CustomerRanking
+FROM dbo.Customer cust
+    LEFT JOIN dbo.Ranking rnk
+        ON cust.RankingId = rnk.Id
+    LEFT JOIN [Order] ord
+        ON cust.CustomerId = ord.CustomerId
+    LEFT JOIN OrderItem ordItm
+        ON ord.OrderId = ordItm.OrderId
+GROUP BY cust.CustomerId,
+         cust.FirstName,
+         cust.LastName,
+         rnk.[Description]
+GO
+
+
+--5
+WITH CTE
+AS (SELECT stf.StaffId,
+           CONCAT(stf.FirstName, ' ', stf.LastName) FullName,
+           CAST(CONCAT(stf.FirstName, ' ', stf.LastName, ', ') AS VARCHAR(MAX)) Hierarchy
+    FROM Staff stf
+    WHERE stf.ManagerId IS NULL
+    UNION ALL
+    SELECT stf.StaffId,
+           CONCAT(stf.FirstName, ' ', stf.LastName),
+           CAST(CONCAT(cte.Hierarchy, stf.FirstName, ' ' + stf.LastName, ', ') AS VARCHAR(MAX))
+    FROM Staff stf
+        INNER JOIN CTE cte
+            ON (stf.ManagerId = cte.StaffId)
+   )
+SELECT StaffId,
+       FullName,
+       LEFT(Hierarchy, LEN(Hierarchy) - 1) AS EmployeeHierarchy
+FROM CTE SC
+ORDER BY StaffId
